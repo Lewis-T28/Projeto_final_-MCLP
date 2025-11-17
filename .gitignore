@@ -1,0 +1,24 @@
+# ----------------------------------------------------------------------
+# Arquivos e Diretórios Gerados Automaticamente pelo Python
+# ----------------------------------------------------------------------
+
+# Diretório de cache de bytecode do Python
+__pycache__/
+
+
+# ----------------------------------------------------------------------
+# Diretórios de Dados e Resultados Gerados pelo Projeto
+# ----------------------------------------------------------------------
+
+# Diretório para gráficos gerados (se for apenas output)
+/grafo_prints/
+
+/instancias/ 
+
+# ----------------------------------------------------------------------
+# Arquivos Específicos de Implementação
+# ----------------------------------------------------------------------
+
+# Saída de Solver (se o PuLP gerar arquivos temporários)
+*.lp
+*.mps
