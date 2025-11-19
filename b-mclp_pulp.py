@@ -13,15 +13,15 @@ from typing import Dict, Iterable, Optional
 import argparse
 import pulp
 
-from reader_pmed import read_pmed_file, build_cost_matrix
-from floyd_marshall_algo import floyd_marshall
-from build_dist_matrix import matrix_to_dict
-from print_nodes_backup import plot_solution_backup
+from src.reader_pmed import read_pmed_file, build_cost_matrix
+from src.floyd_marshall_algo import floyd_marshall
+from src.build_dist_matrix import matrix_to_dict
+from src.print_nodes_backup import plot_solution_backup
 
 
 """
 # MCLP com backup, beta = 0.3, raio 50, pesos uniformes, com gráfico
-python b-mclp_pulp.py pmed1.txt -R 50 --beta 0.3 --uniform-weight --print
+python b-mclp_pulp.py instancias/pmed12.txt -R 50 --beta 0.3 --uniform-weight --print
 """
 
 
@@ -239,9 +239,6 @@ def main():
             instance_name=args.arquivo,   # ← AQUI!
             filename="solution_mclp_backup",
         )
-
-
-
 
 if __name__ == "__main__":
     main()
