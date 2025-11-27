@@ -3,14 +3,14 @@ from typing import Dict, Iterable, Optional
 import argparse
 import pulp
 
-from reader_pmed import read_pmed_file, build_cost_matrix
-from floyd_marshall_algo import floyd_marshall
-from build_dist_matrix import matrix_to_dict
-from print_nodes import plot_solution
+from src.reader_pmed import read_pmed_file, build_cost_matrix
+from src.floyd_marshall_algo import floyd_marshall
+from src.build_dist_matrix import matrix_to_dict
+from src.print_nodes import plot_solution
 
 """
 Exemple of use
-python mclp_pulp.py pmed1 -R 50 --uniform-weight
+python -m mclp_pulp instancias/pmed12.txt -R 50 --uniform-weight
 """
 
 

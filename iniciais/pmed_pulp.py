@@ -11,7 +11,7 @@ from src.print_nodes import plot_solution
 
 """
 Example of use (p-median)
-python mclp_pulp.py pmed1.txt --uniform-weight
+python -m pmed_pulp instancias/pmed1.txt --uniform-weight
 """
 
 

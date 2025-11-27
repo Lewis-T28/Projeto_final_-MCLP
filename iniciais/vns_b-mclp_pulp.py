@@ -7,21 +7,17 @@ import argparse
 from typing import Dict, Iterable, Set, Tuple, List, Optional, Any
 
 # =====================================================================
-#   IMPORTAÇÕES DAS FUNÇÕES DE UTILIDADE (Seus arquivos anexos)
+#   IMPORTAÇÕES DAS FUNÇÕES DE UTILIDADE 
 # =====================================================================
-
-# Funções de leitura e matriz de custos
 from src.reader_pmed import read_pmed_file, build_cost_matrix 
-
-# Algoritmo de menor caminho (distâncias de todos os pares)
 from src.floyd_marshall_algo import floyd_marshall 
-
-# Conversão da matriz de distâncias para dict-of-dicts
 from src.build_dist_matrix import matrix_to_dict
-
-# Função de plotagem (grava o gráfico em arquivo)
 from src.print_nodes_backup import plot_solution_backup 
 
+"""
+Exemplo de execução
+python -m vns_b-mclp_pulp instancias/pmed12.txt -R 50.0 --beta 0.3 --max-iter 15 --k-max 2 --print
+"""
 
 # =====================================================================
 #   1. Funções de Avaliação e Estrutura MCLP
