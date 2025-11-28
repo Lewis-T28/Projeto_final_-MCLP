@@ -12,6 +12,7 @@ __pycache__/
 
 # Diretório para gráficos gerados (se for apenas output)
 /grafo_prints/
+/relatorios/
 
 /instancias/ 
 

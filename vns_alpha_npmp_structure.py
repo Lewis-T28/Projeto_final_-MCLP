@@ -1,6 +1,10 @@
 import random
 import numpy as np
+import os
+from datetime import datetime
 import time
+from src.pmed_loader_to_vns_alpha_npmp import load_pmed_instance
+
 
 # --- 1. DADOS DE ENTRADA (SÃO JOSÉ DOS CAMPOS) ---
 
@@ -17,8 +21,15 @@ DISTANCIA = np.array([
     [25, 20, 30, 28, 22, 15, 0, 60], [35, 40, 45, 42, 38, 50, 60, 0]
 ])
 
-P = 7  # Número de facilidades a abrir
-ALPHA = 2 # Número de vizinhos (resiliência)
+P = 4  # Número de facilidades a abrir
+ALPHA = 1 # Número de vizinhos (resiliência)
+
+# ---- 1. COLETA DE DADOS (pmed) -----------
+INSTANCIA = f"instancias/pmed12.txt"
+file_path = INSTANCIA
+
+P, REGIOES, POPULACAO, DISTANCIA = load_pmed_instance(file_path)
+num_regioes = len(REGIOES)
 
 
 # --- 2. FUNÇÕES AUXILIARES ---
@@ -115,6 +126,7 @@ def local_search(solution, dist_matrix, populacao_dict, alpha):
                     best_cost = neighbor_cost
                     best_neighbor = neighbor
                     melhoria_encontrada = True
+                    break
         
         if melhoria_encontrada:
             s_star = best_neighbor
@@ -128,37 +140,83 @@ def vns_solve(p_val, alpha_val, dist_matrix, populacao_dict, max_iter=100, k_max
     """
     Algoritmo Variable Neighborhood Search (VNS) para o αNpMP.
     """
+    data_hora = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"relatorios/execucao_aNpMP_{data_hora}.txt"
+
     # 1. Geração da Solução Inicial
     s = generate_initial_solution(p_val)
     cost = evaluate_solution(s, dist_matrix, populacao_dict, alpha_val)
     
     s_best = list(s)
     cost_best = cost
+
+
     
     print(f"Custo Inicial: {cost_best:,.2f}")
+
+    print(f"Iniciando VNS... Log será salvo em: {filename}")
     
-    for iter_count in range(max_iter):
-        k = 1
-        while k <= k_max:
-            # 2. Shaking (Perturbação)
-            s_prime = shaking(s, k)
-            
-            # 3. Busca Local (Busca o mínimo local s'' na vizinhança 1-swap)
-            s_double_prime, cost_double_prime = local_search(s_prime, dist_matrix, populacao_dict, alpha_val)
-            
-            # 4. Movimento (Aceitação da Solução)
-            if cost_double_prime < cost:
-                s = s_double_prime
-                cost = cost_double_prime
-                k = 1 # Reinicia a busca com a vizinhança mais simples
+    # Abre o arquivo para escrita
+    with open(filename, 'w', encoding='utf-8') as f:
+        
+        # --- Cabeçalho ---
+        f.write(f"{INSTANCIA}\n")
+        f.write(f"P={p_val}, Alpha={alpha_val}, Nodes={len(REGIOES)}\n")
+        f.write("="*50 + "\n")
+
+        log1 = f"Cost_inicial={cost_best:.2f} | S={s_best}"
+
+        f.write(log1)
+        
+        # --- Loop Principal ---
+        for iter_count in range(max_iter):
+            # Inicia o cronômetro da iteração
+            iter_start_time = time.time()
+
+            k = 1
+            while k <= k_max:
+                # 2. Shaking (Perturbação)
+                s_prime = shaking(s, k)
                 
-                if cost < cost_best:
-                    s_best = s
-                    cost_best = cost
-                    print(f"Iter {iter_count+1}: NOVO MELHOR CUSTO: {cost_best:,.2f} (k={k})")
-            else:
-                k += 1 # Aumenta a vizinhança para tentar escapar do mínimo local
-        iter_count += 1
+                # 3. Busca Local (Busca o mínimo local s'' na vizinhança 1-swap)
+                s_double_prime, cost_double_prime = local_search(s_prime, dist_matrix, populacao_dict, alpha_val)
+                
+                # 4. Movimento (Aceitação da Solução)
+                if cost_double_prime < cost:
+                    s = s_double_prime
+                    cost = cost_double_prime
+                    k = 1 # Reinicia a busca com a vizinhança mais simples
+                    
+                    if cost < cost_best:
+                        s_best = s
+                        cost_best = cost
+                        print(f"Iter {iter_count+1}: NOVO MELHOR CUSTO: {cost_best:,.2f} (k={k})")
+                else:
+                    k += 1 # Aumenta a vizinhança para tentar escapar do mínimo local
+            iter_count += 1
+            
+
+            # Para o cronômetro e calcula a duração
+            iter_end_time = time.time()
+            iter_duration = iter_end_time - iter_start_time
+
+            # --- Log da Iteração (s_final e cost_final) ---
+            # Aqui salvamos o estado da solução 's' ao final do ciclo de vizinhanças (k=1 a k_max)
+            # Convertendo índices para nomes para ficar legível (opcional, pode remover o map se quiser só índices)
+            s_nomes = [REGIOES[i] for i in s]
+            
+            log_line = f"Iter {iter_count+1}: Time={iter_duration:.4f}s | Cost={cost:.2f} | S={s_nomes}\n"
+            f.write(log_line)
+
+            print(iter_count, "atualmente o custo está em ", cost_best, "com tempo de execução ", iter_duration)
+            
+            # (Opcional) Imprime no console também para acompanhar
+            # print(log_line.strip())
+        
+        # --- Rodapé ---
+        f.write("="*50 + "\n")
+        f.write(f"MELHOR SOLUÇÃO GLOBAL: Cost={cost_best:.2f}\n")
+        f.write(f"S_BEST={ [REGIOES[i] for i in s_best] }\n")
                 
     return s_best, cost_best
 
@@ -171,7 +229,7 @@ if __name__ == '__main__':
     print("="*50)
     
     # Execução do VNS
-    best_solution_indices, best_cost = vns_solve(P, ALPHA, DISTANCIA, POPULACAO, max_iter=50, k_max=4)
+    best_solution_indices, best_cost = vns_solve(P, ALPHA, DISTANCIA, POPULACAO, max_iter=50, k_max= P)
     
     # Conversão dos índices para nomes de regiões
     best_solution_regions = [REGIOES[i] for i in best_solution_indices]
