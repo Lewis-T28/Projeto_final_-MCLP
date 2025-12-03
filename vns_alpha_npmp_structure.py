@@ -152,6 +152,7 @@ def vns_solve(p_val, alpha_val, dist_matrix, populacao_arr, regioes, max_iter=50
     with open(filename, 'w') as f:
         f.write(f"VNS CPU OPTIMIZED | P={p_val} | Alpha={alpha_val}\n")
         start_time = time.time()
+        f.write(f"Valores iniciais: \nCusto inicial={cost_best} | S inicial={s_best}")
         
         for iter_count in range(1, max_iter):
             iter_start = time.time()
@@ -173,6 +174,7 @@ def vns_solve(p_val, alpha_val, dist_matrix, populacao_arr, regioes, max_iter=50
                         s_best = list(s)
                         cost_best = cost
                         print(f"Iter {iter_count}: Novo Melhor: {cost_best:,.2f}")
+                        break
                 else:
                     k += 1
             
