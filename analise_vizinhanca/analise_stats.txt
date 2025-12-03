@@ -1,0 +1,5 @@
+Arquivo: data_lorena/coord324.txt
+K Vizinhos: 3
+Global Mean: 104.38288116455078
+Min: 46.30728530883789
+Max: 256.95916748046875

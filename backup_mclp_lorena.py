@@ -63,37 +63,50 @@ def load_lorena_instance(coord_file, demand_file):
     return num_nodes, pop_arr, dist_matrix, coords_arr, radius_s
 
 # =====================================================================
-#   2. VISUALIZAÇÃO
+#   2. VISUALIZAÇÃO COM BACKUP
 # =====================================================================
 
-def plot_mapa_mclp(iter_count, current_s, dist_matrix, coords_arr, radius, output_dir):
+def plot_mapa_mclp_backup(iter_count, current_s, dist_matrix, coords_arr, radius, beta, output_dir):
     """
-    Salva o mapa. Usa print() normal para NÃO sair no relatório de texto.
+    Plota mapa distinguindo cobertura primária e secundária.
     """
     try:
-        min_dists = np.min(dist_matrix[:, current_s], axis=1)
-        covered_mask = min_dists <= radius
+        # Calcula quantas facilidades cobrem cada nó
+        dists = dist_matrix[:, current_s] # (N, P)
+        covered_counts = np.sum(dists <= radius, axis=1) # (N,) conta quantos <= S
+        
+        mask_0 = covered_counts == 0
+        mask_1 = covered_counts == 1
+        mask_2plus = covered_counts >= 2
         
         plt.figure(figsize=(10, 8))
         
-        plt.scatter(coords_arr[covered_mask, 0], coords_arr[covered_mask, 1], 
-                    c='lightgreen', s=30, label='Coberto', alpha=0.7)
-        plt.scatter(coords_arr[~covered_mask, 0], coords_arr[~covered_mask, 1], 
-                    c='gray', s=15, label='Não Coberto', alpha=0.3, marker='x')
+        # Plot 0: Não Coberto (Cinza/X)
+        plt.scatter(coords_arr[mask_0, 0], coords_arr[mask_0, 1], 
+                    c='lightgray', s=20, label='Não Coberto', marker='x', alpha=0.5)
+        
+        # Plot 1: Cobertura Simples (Amarelo)
+        plt.scatter(coords_arr[mask_1, 0], coords_arr[mask_1, 1], 
+                    c='orange', s=35, label='Cobertura Simples (1)', alpha=0.8)
+        
+        # Plot 2+: Cobertura com Backup (Verde)
+        label_backup = 'Cobertura Backup (2+)' if beta > 0 else 'Cobertura Múltipla'
+        plt.scatter(coords_arr[mask_2plus, 0], coords_arr[mask_2plus, 1], 
+                    c='green', s=35, label=label_backup, alpha=0.8)
 
+        # Facilidades
         fac_coords = coords_arr[current_s]
         plt.scatter(fac_coords[:, 0], fac_coords[:, 1], c='red', s=150, marker='*', 
                     label='Instalação', zorder=10, edgecolors='black')
         
-        plt.title(f"Iter {iter_count:03d} | Raio={radius}")
+        plt.title(f"Iter {iter_count:03d} | Raio={radius} | Beta={beta}")
         plt.legend(loc='upper right')
         plt.grid(True, linestyle=':', alpha=0.3)
         plt.axis('equal')
         
-        nome_arquivo = os.path.join(output_dir, f"mclp_iter_{iter_count:03d}.png")
+        nome_arquivo = os.path.join(output_dir, f"mclp_beta_iter_{iter_count:03d}.png")
         plt.savefig(nome_arquivo, dpi=100)
         plt.close()
-        # O usuário pediu para não salvar este log no txt, então usamos print normal
         print(f"[IO] Imagem salva: {os.path.basename(nome_arquivo)}")
     except Exception as e:
         print(f"[Aviso] Erro ao plotar imagem: {e}")
@@ -101,10 +114,13 @@ def plot_mapa_mclp(iter_count, current_s, dist_matrix, coords_arr, radius, outpu
 def plot_convergencia(history_best, output_dir):
     try:
         plt.figure(figsize=(8, 4))
-        plt.plot(history_best, label='Demanda NÃO Coberta (Minimizar)', color='red')
+        # Como estamos minimizando o Negativo, o gráfico mostra valores negativos
+        # Vamos inverter para mostrar "Score Positivo"
+        scores_positivos = [-h for h in history_best]
+        plt.plot(scores_positivos, label='Score Cobertura (Max)', color='blue')
         plt.xlabel('Iteração')
-        plt.ylabel('Custo')
-        plt.title('Convergência MCLP')
+        plt.ylabel('Score Ponderado (Pop + Beta*Pop)')
+        plt.title('Evolução da Cobertura com Backup')
         plt.grid(True)
         plt.legend()
         plt.savefig(os.path.join(output_dir, "convergencia_mclp.png"))
@@ -113,25 +129,45 @@ def plot_convergencia(history_best, output_dir):
         print(f"[Aviso] Erro ao plotar convergência: {e}")
 
 # =====================================================================
-#   3. VNS MCLP (COM LOGGING ATUALIZADO)
+#   3. VNS MCLP - BACKUP (FO MODIFICADA)
 # =====================================================================
 
-def evaluate_single_mclp(solution, dist_matrix, populacao_arr, alpha, radius):
-    sol_batch = np.array([solution], dtype=int)
-    dists_batch = dist_matrix[sol_batch, :]
-    
-    if alpha == 1:
-        min_dists = np.min(dists_batch, axis=1)
-        uncovered_mask = min_dists > radius
-    else:
-        if alpha < dists_batch.shape[1]:
-            partitioned = np.partition(dists_batch, alpha-1, axis=1)
-            alpha_dists = partitioned[:, alpha-1, :]
-            uncovered_mask = alpha_dists > radius
-        else:
-            uncovered_mask = np.ones((1, dists_batch.shape[2]), dtype=bool)
+def evaluate_backup_mclp(solution, dist_matrix, populacao_arr, radius, beta):
+    """
+    Calcula o score de cobertura considerando backup.
+    Retorna NEGATIVO para minimização.
+    """
+    s_arr = np.array(solution)
+    # Distâncias de todos os nós para as facilidades escolhidas
+    # Shape: (P, N) -> Transpomos para (N, P) se necessário, mas numpy resolve bem
+    dists_subset = dist_matrix[:, s_arr] # Shape (N, P)
 
-    return np.dot(uncovered_mask, populacao_arr)[0]
+    # Precisamos das 2 menores distâncias para cada nó
+    # np.partition é mais rápido que sort. kth=1 garante que os índices 0 e 1 tenham os menores
+    if dists_subset.shape[1] >= 2:
+        part = np.partition(dists_subset, 1, axis=1)
+        d1 = part[:, 0] # Menor distância
+        d2 = part[:, 1] # Segunda menor distância
+    else:
+        # Se P=1, não existe backup
+        d1 = dists_subset[:, 0]
+        d2 = np.full_like(d1, np.inf)
+
+    # Lógica de Pontuação
+    # 1. Cobertura Primária (Peso 1)
+    mask_primary = d1 <= radius
+    score_primary = np.sum(populacao_arr[mask_primary])
+
+    # 2. Cobertura Secundária (Peso Beta)
+    score_backup = 0
+    if beta > 0:
+        mask_backup = d2 <= radius
+        score_backup = np.sum(populacao_arr[mask_backup]) * beta
+
+    total_score = score_primary + score_backup
+    
+    # Retorna negativo pois VNS minimiza
+    return -total_score
 
 def neighborhood_k_exchange_random(solution, candidates_range, k):
     s_prime = list(solution)
@@ -139,7 +175,6 @@ def neighborhood_k_exchange_random(solution, candidates_range, k):
     fechadas = [i for i in candidates_range if i not in abertas]
     effective_k = min(k, len(abertas), len(fechadas))
     if effective_k == 0: return s_prime
-
     for _ in range(effective_k):
         i_fechar = random.choice(list(abertas))
         abertas.remove(i_fechar); s_prime.remove(i_fechar)
@@ -147,75 +182,77 @@ def neighborhood_k_exchange_random(solution, candidates_range, k):
         fechadas.remove(i_abrir); s_prime.append(i_abrir)
     return s_prime
 
-def local_search_best_improvement(solution, dist_matrix, populacao_arr, alpha, num_regioes, radius):
+def local_search_best_improvement(solution, dist_matrix, populacao_arr, num_regioes, radius, beta):
     s_best = list(solution)
-    cost_best = evaluate_single_mclp(s_best, dist_matrix, populacao_arr, alpha, radius)
+    cost_best = evaluate_backup_mclp(s_best, dist_matrix, populacao_arr, radius, beta)
+    
     abertas = list(s_best)
     fechadas = [i for i in range(num_regioes) if i not in s_best]
     
+    # Amostragem para performance
     if len(fechadas) > 50: 
         fechadas = random.sample(fechadas, 50)
         
     for i_fechar in abertas:
         for i_abrir in fechadas:
             neighbor = [x for x in s_best if x != i_fechar] + [i_abrir]
-            cost_neighbor = evaluate_single_mclp(neighbor, dist_matrix, populacao_arr, alpha, radius)
+            cost_neighbor = evaluate_backup_mclp(neighbor, dist_matrix, populacao_arr, radius, beta)
             if cost_neighbor < cost_best:
                 return neighbor, cost_neighbor
     return s_best, cost_best
 
-def vns_solve(dist_matrix, populacao_arr, coords_arr, p, alpha, max_iter, k_max, radius, output_dir):
+def vns_solve(dist_matrix, populacao_arr, coords_arr, p, beta, max_iter, k_max, radius, output_dir):
     num_nodes = len(populacao_arr)
     candidates_range = range(num_nodes)
     total_demand = np.sum(populacao_arr)
     
-    # ---------------------------------------------------------
-    # CONFIGURAÇÃO DE LOGGING
-    # ---------------------------------------------------------
-    log_file = os.path.join(output_dir, "relatorio_detalhado.txt")
+    # Score máximo teórico (se tudo for coberto 2 vezes)
+    max_score_possible = total_demand * (1 + beta)
     
-    # Função auxiliar para printar na tela E salvar no arquivo
+    # Logging Setup
+    log_file = os.path.join(output_dir, "relatorio_detalhado.txt")
     def log_dual(msg):
-        print(msg) # Tela
+        print(msg)
         with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(msg + "\n") # Arquivo
+            f.write(msg + "\n")
 
-    # Cabeçalho do Log
     with open(log_file, 'w', encoding='utf-8') as f:
-        f.write(f"--- RELATÓRIO DE EXECUÇÃO MCLP ---\n")
-        f.write(f"Data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"Parâmetros: P={p} | Raio={radius} | Nós={num_nodes} | Alpha={alpha}\n")
-        f.write(f"Demanda Total: {total_demand:,.2f}\n")
+        f.write(f"--- RELATÓRIO MCLP COM BACKUP ---\n")
+        f.write(f"Parâmetros: P={p} | Raio={radius} | Beta={beta}\n")
+        f.write(f"Demanda Base: {total_demand:,.2f}\n")
+        f.write(f"Score Máximo Teórico: {max_score_possible:,.2f}\n")
         f.write("-" * 50 + "\n")
 
-    log_dual(f"\n--- VNS MCLP INICIADO ---")
-    log_dual(f"Nodes: {num_nodes} | P: {p} | Radius: {radius}")
+    log_dual(f"\n--- VNS MCLP (BACKUP BETA={beta}) ---")
     
     # Solução Inicial
     s_current = random.sample(candidates_range, p)
-    cost_current = evaluate_single_mclp(s_current, dist_matrix, populacao_arr, alpha, radius)
+    cost_current = evaluate_backup_mclp(s_current, dist_matrix, populacao_arr, radius, beta)
     s_best = list(s_current)
     cost_best = cost_current
     
     history_best = [cost_best]
     start_time_global = time.time()
     
-    # Iteração 0
-    cob_percent = ((total_demand - cost_current)/total_demand)*100
-    log_dual(f"Iter 000 | Uncovered: {cost_current:,.0f} | Coverage: {cob_percent:.1f}% | Inicial")
+    score_ini = -cost_current
+    log_dual(f"Iter 000 | Score: {score_ini:,.2f} ({(score_ini/max_score_possible)*100:.1f}% do max teórico)")
     
     if coords_arr is not None:
-        plot_mapa_mclp(0, s_current, dist_matrix, coords_arr, radius, output_dir)
+        plot_mapa_mclp_backup(0, s_current, dist_matrix, coords_arr, radius, beta, output_dir)
     
-    # --- LOOP VNS ---
+    # Loop VNS
     for iter_count in range(1, max_iter + 1):
-        iter_start_time = time.time() # Início do cronômetro da iteração
+        iter_start_time = time.time()
         k = 1
         
         while k <= k_max:
+            # 1. Shaking
             s_prime = neighborhood_k_exchange_random(s_current, candidates_range, k)
-            s_double, cost_double = local_search_best_improvement(s_prime, dist_matrix, populacao_arr, alpha, num_nodes, radius)
             
+            # 2. Local Search
+            s_double, cost_double = local_search_best_improvement(s_prime, dist_matrix, populacao_arr, num_nodes, radius, beta)
+            
+            # 3. Neighborhood Change
             if cost_double < cost_current:
                 s_current = s_double
                 cost_current = cost_double
@@ -223,38 +260,35 @@ def vns_solve(dist_matrix, populacao_arr, coords_arr, p, alpha, max_iter, k_max,
                     s_best = list(s_current)
                     cost_best = cost_current
                     
-                    # LOG DE MELHORIA NO ARQUIVO
-                    cob_abs = total_demand - cost_best
-                    log_dual(f"  >> MELHORIA (k={k}): Cobrindo {cob_abs:,.0f} (Nodes: {s_best})")
+                    score_abs = -cost_best
+                    log_dual(f"  >> MELHORIA (k={k}): Score {score_abs:,.2f}")
                     
                 k = 1 
             else:
                 k += 1 
         
         history_best.append(cost_best)
-        
-        # Fim do cronômetro da iteração
         iter_duration = time.time() - iter_start_time
         
-        # LOG PERIÓDICO NO ARQUIVO (com Tempo)
+        # Log Periódico
         if iter_count % 5 == 0 or iter_count == max_iter:
-            cob_percent = ((total_demand - cost_best)/total_demand)*100
-            # Adicionado campo Time
-            log_dual(f"Iter {iter_count:03d}/{max_iter} | Uncovered: {cost_best:,.0f} | Cov: {cob_percent:.1f}% | Time: {iter_duration:.4f}s")
+            score_abs = -cost_best
+            log_dual(f"Iter {iter_count:03d}/{max_iter} | Score: {score_abs:,.2f} | Time: {iter_duration:.4f}s")
             
             if coords_arr is not None:
-                plot_mapa_mclp(iter_count, s_current, dist_matrix, coords_arr, radius, output_dir)
+                plot_mapa_mclp_backup(iter_count, s_current, dist_matrix, coords_arr, radius, beta, output_dir)
 
-    # --- FINALIZAÇÃO ---
+    # Finalização
     total_time = time.time() - start_time_global
+    final_score = -cost_best
     
     log_dual("-" * 50)
     log_dual(f"Tempo Total: {total_time:.2f}s")
-    log_dual(f"Melhor Cobertura: {total_demand - cost_best:,.2f} ({((total_demand - cost_best)/total_demand)*100:.2f}%)")
+    log_dual(f"Melhor Score Ponderado: {final_score:,.2f}")
     log_dual(f"Facilidades Finais: {s_best}")
     
     plot_convergencia(history_best, output_dir)
-    print(f"[IO] Log completo salvo em: {log_file}")
+    print(f"[IO] Log salvo em: {log_file}")
     
     return s_best, cost_best
 
@@ -268,15 +302,18 @@ def main():
     parser.add_argument("--demanda", required=True)
     parser.add_argument("--p", type=int, default=10)
     parser.add_argument("--radius", type=float, default=0)
+    # Novo Argumento Beta
+    parser.add_argument("--beta", type=float, default=0.0, help="Importância da segunda cobertura (0.0 a 1.0)")
     parser.add_argument("--max-iter", type=int, default=30)
     
     args = parser.parse_args()
     
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    output_dir = os.path.abspath(os.path.join("relatorios_mclp", f"run_{timestamp}"))
+    output_dir = os.path.abspath(os.path.join("relatorios_mclp_backup", f"run_{timestamp}"))
     os.makedirs(output_dir, exist_ok=True)
     
-    print(f"\n--- INICIANDO ---")
+    print(f"\n--- INICIANDO MCLP COM BACKUP ---")
+    print(f"Beta: {args.beta}")
     print(f"Pasta de Saída: {output_dir}")
     
     try:
@@ -286,7 +323,7 @@ def main():
         if final_radius <= 0:
             print("AVISO: Raio = 0! Use --radius X para definir.")
         
-        vns_solve(dist_matrix, pop_arr, coords_arr, args.p, 1, args.max_iter, 3, final_radius, output_dir)
+        vns_solve(dist_matrix, pop_arr, coords_arr, args.p, args.beta, args.max_iter, 3, final_radius, output_dir)
         
     except Exception as e:
         print(f"ERRO FATAL: {e}")
