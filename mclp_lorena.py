@@ -237,7 +237,7 @@ def vns_solve(dist_matrix, populacao_arr, coords_arr, p, alpha, max_iter, k_max,
         iter_duration = time.time() - iter_start_time
         
         # LOG PERIÓDICO NO ARQUIVO (com Tempo)
-        if iter_count % 5 == 0 or iter_count == max_iter:
+        if iter_count % 100 == 0 or iter_count == max_iter or iter_count == 1 or iter_count== 5 or iter_count == 20:
             cob_percent = ((total_demand - cost_best)/total_demand)*100
             # Adicionado campo Time
             log_dual(f"Iter {iter_count:03d}/{max_iter} | Uncovered: {cost_best:,.0f} | Cov: {cob_percent:.1f}% | Time: {iter_duration:.4f}s")

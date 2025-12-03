@@ -7,6 +7,10 @@ import sys
 from datetime import datetime
 import matplotlib.pyplot as plt
 
+"""
+python -m "backup_mclp_lorena" --arquivo "data_lorena/coord324.txt" --demanda "data_lorena/demanda324.txt" --p 10 --max-iter 30 --radius 260 --beta 0.3
+"""
+
 # =====================================================================
 #   1. CARREGAMENTO (MCLP LORENA)
 # =====================================================================
